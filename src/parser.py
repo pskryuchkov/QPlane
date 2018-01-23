@@ -1,6 +1,3 @@
-from pprint import pprint
-
-
 def check_int(e):
     try:
         int(e)
@@ -43,4 +40,18 @@ def parse_config(fn):
 
     return params
 
-pprint(parse_config("config.txt"))
+
+def get_params(fn):
+    class Parameters(object):
+        pass
+
+    data = parse_config(fn)
+    ps = Parameters()
+
+    for key in data.keys():
+        setattr(ps, key, data[key])
+
+    return ps
+
+config = get_params("../quad.cfg")
+print config.__dict__

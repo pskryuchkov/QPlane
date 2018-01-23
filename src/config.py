@@ -43,7 +43,7 @@ device = "cpu"
 init_positions = "lattice" # probe / last / lattice
 
 # input / output files
-in_probe         = "../data/probe/probe_positions.txt"
+in_probe = "../data/probe/probe_positions.txt"
 last_positions   = "../data/last/last_positions.txt"
 out_correlations = "corr_func.txt"
 out_energy       = "energy.txt"

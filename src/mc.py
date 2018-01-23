@@ -10,6 +10,7 @@ import config
 import energy
 import warnings
 import getopt
+from parser import config as uconfig
 
 start_time = None
 global_energy = None
@@ -222,13 +223,12 @@ class ParticleSystem:
 
         coord_evolution = []
 
-        for b in range(config.blocks):
+        for b in range(uconfig.blocks):
 
             self.success_cnt, self.fail_cnt = 0, 0
 
-            for i in range(config.n_iter):
-                self.curr_en = self.metropolis_step(config.temperature,
-                                                   config.maxDeltaPos)
+            for i in range(uconfig.n_iter):
+                self.curr_en = self.metropolis_step(uconfig.tp, uconfig.dx)
             self.show_progress()
             self.write_log(b)
 
@@ -246,27 +246,43 @@ class ParticleSystem:
         if config.save_screenshot:
             pass
 
-    def freezing(self, tp_factor=0.7, dx_factor=0.7, balance_wait_blocks=30):
+    def freezing(self, start_pow=2, end_pow=-3, dt_steps=10,
+                 dx_factor=0.7, balance_wait_blocks=30, stop_rate=0.07):
 
-        curr_t, curr_dx = config.tp, config.dx
         coord_evolution = []
 
-        for b in range(config.blocks):
+        t_val = logspace(start_pow, end_pow, dt_steps)
+
+        idx = 0
+        curr_t, curr_dx = t_val[idx], uconfig.dx
+
+        for b in range(dt_steps * balance_wait_blocks):
             self.success_cnt, self.fail_cnt = 0, 0
 
             if b % balance_wait_blocks == 0:
                 if b > 0:
-                    curr_t, curr_dx = curr_t * tp_factor, curr_dx * dx_factor
+                    idx += 1
+                    curr_t, curr_dx = t_val[idx], curr_dx * dx_factor
 
                 log("T={} Dx={}".format(curr_t, curr_dx))
 
-            for i in range(config.n_iter):
-                self.curr_en = self.metropolis_step(curr_t, curr_dx)
+            e_eval = []
+            for i in range(uconfig.n_iter):
+                e = self.metropolis_step(curr_t, curr_dx)
+                e_eval.append(e)
+
+            self.curr_en = mean(e_eval)
 
             self.show_progress()
             self.write_log(b)
 
             coord_evolution.append(self.positions)
+
+            acception_rate = float32(100.0 * self.success_cnt) / \
+                             (self.success_cnt + self.fail_cnt)
+
+            if acception_rate < stop_rate:
+                break
 
         if config.save_screenshot:
             pass
@@ -340,7 +356,7 @@ def set_paths():
 
 def rect_lattice():
     lx, ly = [], []
-    tight_factor = 0.95
+    tight_factor = 0.96
 
     x_order, y_order = config.n_horizontal, config.n_vertical
     side = config.box_size
@@ -358,7 +374,7 @@ def rect_lattice():
 
 def load_coordinates():
     init_coords = None
-    log("mode: '{}'".format(config.init_positions))
+    #log("mode: '{}'".format(config.init_positions))
     if config.init_positions == "lattice":
         init_coords = rect_lattice()
     elif config.init_positions == "probe":
@@ -390,16 +406,16 @@ if __name__ == "__main__":
 
     positions = load_coordinates()
 
-    log("potential:", config.potential)
-    log("n_particles:", len(positions[0]))
-    log("temperature: {0:.2e}".format(config.temperature * config.diskRadius ** (-5)))
+    #log("potential:", config.potential)
+    #log("n_particles:", len(positions[0]))
+    #log("temperature: {0:.2e}".format(config.temperature * config.diskRadius ** (-5)))
 
-    log("hx={0}, hy={1}".format(round(config.field_direction[0], 3),
-                                round(config.field_direction[1], 3)))
+    #log("hx={0}, hy={1}".format(round(config.field_direction[0], 3),
+    #                            round(config.field_direction[1], 3)))
     set_bounds()
 
-    log("delta_pos:", config.maxDeltaPos)
-    log("disk_radius:", config.diskRadius)
+    #log("delta_pos:", config.maxDeltaPos)
+    #log("disk_radius:", config.diskRadius)
 
     positions = positions.astype(double)
 
@@ -411,8 +427,12 @@ if __name__ == "__main__":
 
     start_time = time.time()
 
-    #liquid.evolution()
-    liquid.freezing()
+    if uconfig.scene == "'freezing'":
+        liquid.freezing()
+    elif uconfig.scene == "'evolution'":
+        liquid.evolution()
+    else:
+        raise ValueError("Invalid value of 'scene': {}".format(uconfig.scene))
 
     end = time.time()
 
