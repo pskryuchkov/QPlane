@@ -54,4 +54,3 @@ def get_params(fn):
     return ps
 
 config = get_params("../quad.cfg")
-print config.__dict__

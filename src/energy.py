@@ -18,7 +18,7 @@ sysEn = None
 
 def init(pc):
     global indexDiv, indexMod, sysEn
-    indexDiv = [j / pc for j in range(pc ** 2)]
+    indexDiv = [j // pc for j in range(pc ** 2)]
     indexMod = [j % pc for j in range(pc ** 2)]
     if config.device == "cpu":
         sysEn = cpuSysEn
@@ -40,6 +40,7 @@ def moduleMatrix(xpos, ypos):
 
 def angleMatrix(xpos, ypos, vec):
     size = xpos.size
+
     xr1 = xpos[indexDiv]
     xr2 = xpos[indexMod]
     yr1 = ypos[indexDiv]

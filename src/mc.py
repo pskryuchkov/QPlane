@@ -11,10 +11,12 @@ import energy
 import warnings
 import getopt
 from parser import config as uconfig
+from pathlib import Path
 
 start_time = None
 global_energy = None
-log_string = ""
+
+_print = print
 
 
 def get_draw_context():
@@ -74,11 +76,6 @@ def correlator(positions):
     return vstack([xr1 - xr2, yr1 - yr2]).T
 
 
-# FIXME : remove this
-def float_to_string(n, ac=config.float_accuracy):
-    return ("{0:." + str(ac) + "f}").format(n)
-
-
 class ParticleSystem:
     prev_energy = 0
 
@@ -123,7 +120,6 @@ class ParticleSystem:
         return new_positions, index
 
     def metropolis_step(self, t, dx):
-
         global global_energy
 
         if global_energy is None:
@@ -214,7 +210,7 @@ class ParticleSystem:
         mins, secs = int((time.time() - start_time) // 60), \
                      int((time.time() - start_time) % 60)
 
-        log("{0} {1:02d}:{2:02d} E={3:.3f} dE={4:.2e}% ({5:.2f}%)".
+        print("{0} {1:02d}:{2:02d} E={3:.3f} dE={4:.2e}% ({5:.2f}%)".
             format(iter, mins, secs, energy_per_particle, delta_energy, acception_rate))
 
         self.prev_energy = energy_per_particle
@@ -264,7 +260,7 @@ class ParticleSystem:
                     idx += 1
                     curr_t, curr_dx = t_val[idx], curr_dx * dx_factor
 
-                log("T={} Dx={}".format(curr_t, curr_dx))
+                print("T={} Dx={}".format(curr_t, curr_dx))
 
             e_eval = []
             for i in range(uconfig.n_iter):
@@ -303,27 +299,17 @@ def warning_format(warn_msg, *a):
     return str(warn_msg) + '\n'
 
 
-def log(*args):
-    global log_string
-    for j, arg in enumerate(args):
-        if type(arg) != 'str':
-            print(str(arg)),
-            if config.save_log:
-                log_string += str(arg) + " "
-        else:
-            print(arg),
-            if config.save_log:
-                log_string += arg + " "
-    print
+def reset_file(fn):
+    with open(fn, "w"):
+        pass
+
+
+def print(*args):
+    _print(*args)
+
     if config.save_log:
-        log_string += "\n"
-
-
-def save_log():
-    global log_string
-    if log_string != "":
-        with open(config.log_file, "w") as log_file:
-            log_file.write(log_string)
+        with open(config.log_file, "a") as f:
+            _print(*args, file=f)
 
 
 def parse_args():
@@ -340,7 +326,7 @@ def parse_args():
             config.diskRadius = float(arg)
         if opt in ('-d', '--directory'):
             config.out_dir = arg
-            log("out directory: {0}".format(config.out_dir))
+            print("out directory: {0}".format(config.out_dir))
         if opt in ('-p', '--positions'):
             config.init_positions = arg
         if opt in ('-m', '--max_delta'):
@@ -348,10 +334,11 @@ def parse_args():
 
 
 def set_paths():
-    config.out_correlations = config.out_dir + "/" + config.out_correlations
-    config.out_screen = config.out_dir + "/" + config.out_screen
-    config.log_file = config.out_dir + "/" + config.log_file
-    config.out_energy = config.out_dir + "/" + config.out_energy
+    out_root = Path(config.out_dir)
+    config.log_file = out_root / config.log_file
+    config.out_screen = out_root / config.out_screen
+    config.out_energy = out_root / config.out_energy
+    config.out_correlations = out_root / config.out_correlations
 
 
 def rect_lattice():
@@ -374,7 +361,7 @@ def rect_lattice():
 
 def load_coordinates():
     init_coords = None
-    #log("mode: '{}'".format(config.init_positions))
+
     if config.init_positions == "lattice":
         init_coords = rect_lattice()
     elif config.init_positions == "probe":
@@ -393,33 +380,39 @@ def set_bounds():
         config.hor_lim = max(positions[0]) * 2.01
         config.ver_lim = max(positions[1]) * 2.01
     else:
-        print("Error")
+        raise ValueError("Invalid value of 'bounds'")
 
 if __name__ == "__main__":
 
     scriptDir = os.path.dirname(os.path.realpath(__file__))
     warnings.formatwarning = warning_format
+
     parse_args()
     set_paths()
+    reset_file(config.log_file)
+
+    print("potential: {}".format(config.potential))
+    # print([x for x in list(config.__dict__.keys()) if not x.startswith("_")])
+
     if not os.path.isdir(config.out_dir):
         os.makedirs(config.out_dir)
 
     positions = load_coordinates()
 
-    #log("potential:", config.potential)
-    #log("n_particles:", len(positions[0]))
-    #log("temperature: {0:.2e}".format(config.temperature * config.diskRadius ** (-5)))
+    # log("potential:", config.potential)
+    # log("n_particles:", len(positions[0]))
+    # log("temperature: {0:.2e}".format(config.temperature * config.diskRadius ** (-5)))
 
-    #log("hx={0}, hy={1}".format(round(config.field_direction[0], 3),
+    # log("hx={0}, hy={1}".format(round(config.field_direction[0], 3),
     #                            round(config.field_direction[1], 3)))
     set_bounds()
 
-    #log("delta_pos:", config.maxDeltaPos)
-    #log("disk_radius:", config.diskRadius)
+    # log("delta_pos:", config.maxDeltaPos)
+    # log("disk_radius:", config.diskRadius)
 
     positions = positions.astype(double)
 
-    log("\nStarting simulation...")
+    print("\nStarting simulation...")
 
     liquid = ParticleSystem(positions, config.temperature, None)
 
@@ -436,24 +429,24 @@ if __name__ == "__main__":
 
     end = time.time()
 
-    #log("te:\t", float_to_string(end - start_time, 4))
-    #log("dv:\t", float_to_string(devs, 6))
+    # log("te:\t", float_to_string(end - start_time, 4))
+    # log("dv:\t", float_to_string(devs, 6))
 
-    #if config.save_screenshot:
+    # if config.save_screenshot:
     #    plt.plot(liquid.positions[0], liquid.positions[1], "o",
     #             markeredgewidth=0.0, alpha=0.8, markersize=5.3)
     #
     #    plt.savefig(config.out_screen, dpi=200)
 
-    #if config.save_positions:
+    # if config.save_positions:
     #    savetxt(config.last_positions, liquid.positions, delimiter=',')
     #    savetxt(config.out_dir + "/" + "last_positions.txt",
     #            liquid.positions, delimiter=',')
 
-    #if config.measure_correlations:
+    # if config.measure_correlations:
     #    savetxt(config.out_correlations, stat, delimiter=',')
 
-    #if config.measure_energy:
+    # if config.measure_energy:
     #    savetxt(config.out_energy, energy_list, delimiter=',')
 
-    save_log()
+    # save_log()
