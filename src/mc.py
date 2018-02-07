@@ -1,30 +1,22 @@
 #!/usr/bin/python
 
-from numpy import *
-import sys
+from parser import config as uconfig
 import matplotlib.pyplot as plt
+from pathlib import Path
 import matplotlib as mpl
-import os
-import time
-import config
-import energy
+from numpy import *
 import warnings
 import getopt
-from parser import config as uconfig
-from pathlib import Path
+import config
+import energy
+import time
+import sys
+import os
 
-start_time = None
+
 global_energy = None
-
+start_time = None
 _print = print
-
-
-def get_draw_context():
-    mpl.rcParams['toolbar'] = 'None'
-    fig = plt.figure(figsize=(12, 8))
-    axes = plt.gca()
-    ax = fig.add_subplot(111)
-    return fig, ax
 
 
 def save_point(filename, x, y, xerr=0.0, yerr=0.0):
@@ -32,40 +24,7 @@ def save_point(filename, x, y, xerr=0.0, yerr=0.0):
         logfile.write("{0} {1} {2} {3}\n".format(x, y, xerr, yerr))
 
 
-def clear_file(filename):
-    open(filename, 'w').close()
-
-
-def dot_product(v1, v2):
-    return sum((a*b) for a, b in zip(v1, v2))
-
-
-def vec_length(v):
-    return sqrt(dot_product(v, v))
-
-
-def angle_bv(v1, v2):
-    if vec_length(v1) * vec_length(v2) == 0:
-        return 0
-
-    cos_val = dot_product(v1, v2) / (vec_length(v1) * vec_length(v2))
-
-    if -1.0 <= cos_val <= 1.0:
-        return arccos(dot_product(v1, v2) / (vec_length(v1) * vec_length(v2)))
-
-    else:
-        return pi if cos_val > 1.0 else -pi
-
-
-def cos_func(v1, v2):
-    if vec_length(v1) * vec_length(v2) == 0:
-        return 0
-    return dot_product(v1, v2) / (vec_length(v1) * vec_length(v2))
-
-##################################################################################
-
-
-def correlator(positions):
+def pair_correlator(positions):
     xpos = positions[0]
     ypos = positions[1]
     size = xpos.size
@@ -77,22 +36,18 @@ def correlator(positions):
 
 
 class ParticleSystem:
-    prev_energy = 0
-
-    if __name__ == "__main__":
-        fig, ax = get_draw_context()
-
     def __init__(self, init_coords, temperature, energy_func):
-        self.firstFrame = True
-        self.initPos = copy(init_coords)
-        self.positions = init_coords
-        self.n_particles = size(self.positions[0])
-        self.energyFunc = energy_func
+
+        self.n_particles = init_coords.shape[1]
+        self.prev_en, self.curr_en = 0, 0
         self.temperature = temperature
-        self.success_cnt = 0
-        self.fail_cnt = 0
-        self.initSingle = []
-        self.curr_en = 0
+
+        self._success_cnt, self._fail_cnt = 0, 0
+        self._positions = init_coords
+        self._scene = Scene(self)
+
+    def get_coords(self):
+        return self._positions[0], self._positions[1]
 
     # FIXME, CHECKME
     def keep_bounds(self, prob_coords, xlim, ylim, j):
@@ -110,7 +65,7 @@ class ParticleSystem:
             prob_coords[1][j] += ylim
 
     def move_one(self, max_dx):
-        new_positions = copy(self.positions)
+        new_positions = copy(self._positions)
         index = random.randint(0, self.n_particles)
 
         new_positions[0, index] += random.uniform(low=-max_dx, high=max_dx)
@@ -123,7 +78,7 @@ class ParticleSystem:
         global global_energy
 
         if global_energy is None:
-            global_energy = energy.sysEn(self.positions)
+            global_energy = energy.sysEn(self._positions)
 
         cur_energy = global_energy
 
@@ -132,7 +87,7 @@ class ParticleSystem:
 
             self.keep_bounds(new_positions, config.hor_lim, config.ver_lim, idx)
 
-            old_mu = energy.mu(self.positions, idx)
+            old_mu = energy.mu(self._positions, idx)
             new_mu = energy.mu(new_positions, idx)
 
             if new_mu == inf:
@@ -142,70 +97,34 @@ class ParticleSystem:
 
             delta = new_energy - cur_energy
 
-            if self.fail_cnt > 0 and self.fail_cnt % 500 == 0:
+            if self._fail_cnt > 0 and self._fail_cnt % 500 == 0:
                 warnings.warn("Warning: too many unsuccessful moves", UserWarning)
 
             if delta < 0:
-                self.positions = copy(new_positions)
-                self.success_cnt += 1
+                self._positions = copy(new_positions)
+                self._success_cnt += 1
                 global_energy = new_energy
 
                 return new_energy
             else:
                 r = random.uniform()
                 if r < exp(-delta / t):
-                    self.positions = copy(new_positions)
-                    self.success_cnt += 1
+                    self._positions = copy(new_positions)
+                    self._success_cnt += 1
                     global_energy = new_energy
 
                     return new_energy
                 else:
-                    self.fail_cnt += 1
+                    self._fail_cnt += 1
 
-    def draw_crystal(self, frame_size):
-        if self.firstFrame:
-            fig = plt.gcf()
-            fig.canvas.set_window_title('Monte-Carlo Simulation Progress')
+    def print_info(self, iter):
 
-            plt.ion()
-            plt.xlim(-frame_size, frame_size)
-            plt.ylim(-frame_size, frame_size)
-
-            plt.show()
-            self.firstFrame = False
-            plt.plot([-1.0, -1.0 + config.diskRadius * 2], [-1.0, -1.0])
-
-        descriptors_list = []
-
-        for j in range(self.n_particles):
-            if j in self.initSingle:
-                descriptors_list.append(ParticleSystem.ax.scatter(
-                                    [self.positions[0, j]],
-                                    [self.positions[1, j]],
-                                    color="b", edgecolors='w', s=30, alpha=0.7))
-            else:
-                descriptors_list.append(ParticleSystem.ax.scatter(
-                                    [self.positions[0, j]],
-                                    [self.positions[1, j]],
-                                    color="r", edgecolors='w', s=30, alpha=0.7))
-
-        ParticleSystem.fig.canvas.draw()
-
-        for j in range(len(descriptors_list)):
-            descriptors_list[j].remove()
-
-    # FIXME: remove this
-    def show_progress(self):
-        self.draw_crystal(frame_size=config.pic_limits)
-
-    def write_log(self, iter):
-
-        acception_rate = float32(100.0 * self.success_cnt) / \
-                         (self.success_cnt + self.fail_cnt)
+        acception_rate = float32(100.0 * self._success_cnt) / \
+                         (self._success_cnt + self._fail_cnt)
 
         energy_per_particle = self.curr_en / self.n_particles
 
-        delta_energy = (self.prev_energy - energy_per_particle) / energy_per_particle
+        delta_energy = (self.prev_en - energy_per_particle) / energy_per_particle
 
         mins, secs = int((time.time() - start_time) // 60), \
                      int((time.time() - start_time) % 60)
@@ -213,7 +132,7 @@ class ParticleSystem:
         print("{0} {1:02d}:{2:02d} E={3:.3f} dE={4:.2e}% ({5:.2f}%)".
             format(iter, mins, secs, energy_per_particle, delta_energy, acception_rate))
 
-        self.prev_energy = energy_per_particle
+        self.prev_en = energy_per_particle
 
     def evolution(self):
 
@@ -221,14 +140,15 @@ class ParticleSystem:
 
         for b in range(uconfig.blocks):
 
-            self.success_cnt, self.fail_cnt = 0, 0
+            self._success_cnt, self._fail_cnt = 0, 0
 
             for i in range(uconfig.n_iter):
                 self.curr_en = self.metropolis_step(uconfig.tp, uconfig.dx)
-            self.show_progress()
-            self.write_log(b)
 
-            coord_evolution.append(self.positions)
+            self.print_info(b)
+            self._scene.shot()
+
+            coord_evolution.append(self._positions)
 
         if config.measure_deviations:
             pass
@@ -237,9 +157,6 @@ class ParticleSystem:
             pass
 
         if config.save_coordinates:
-            pass
-
-        if config.save_screenshot:
             pass
 
     def freezing(self, start_pow=2, end_pow=-3, dt_steps=10,
@@ -253,7 +170,7 @@ class ParticleSystem:
         curr_t, curr_dx = t_val[idx], uconfig.dx
 
         for b in range(dt_steps * balance_wait_blocks):
-            self.success_cnt, self.fail_cnt = 0, 0
+            self._success_cnt, self._fail_cnt = 0, 0
 
             if b % balance_wait_blocks == 0:
                 if b > 0:
@@ -269,30 +186,49 @@ class ParticleSystem:
 
             self.curr_en = mean(e_eval)
 
-            self.show_progress()
-            self.write_log(b)
+            self.print_info(b)
+            self._scene.shot()
 
-            coord_evolution.append(self.positions)
+            coord_evolution.append(self._positions)
 
-            acception_rate = float32(100.0 * self.success_cnt) / \
-                             (self.success_cnt + self.fail_cnt)
+            acception_rate = float32(100.0 * self._success_cnt) / \
+                             (self._success_cnt + self._fail_cnt)
 
             if acception_rate < stop_rate:
                 break
 
+
+class Scene():
+    def __init__(self, physical_system):
+        self.ps = physical_system
+        self.fig, self.ax = None, None
+
+    def create_window(self):
+        mpl.rcParams['toolbar'] = 'None'
+        plt.xlim(-config.pic_limits, config.pic_limits)
+        plt.ylim(-config.pic_limits, config.pic_limits)
+
+        self.fig, self.ax = plt.subplots()
+        self.fig.canvas.set_window_title('Monte-Carlo Simulation Progress')
+
+    def shot(self):
+        if self.fig is None or self.ax is None:
+            self.create_window()
+
+        xc, yc = self.ps.get_coords()
+        self.ax.plot(xc, yc, "o")
+        plt.pause(.01)
+        plt.draw()
+        plt.cla()
+
+    def __exit__(self):
         if config.save_screenshot:
-            pass
+            self.fig.savefig('shot.png', dpi=300)
 
 
 def touch(path):
     with open(path, 'a'):
         os.utime(path, None)
-
-
-def refresh_reports(filename):
-    clear_file(filename) if os.path.isfile(filename) else touch(filename)
-
-##################################################################################
 
 
 def warning_format(warn_msg, *a):
@@ -414,7 +350,7 @@ if __name__ == "__main__":
 
     print("\nStarting simulation...")
 
-    liquid = ParticleSystem(positions, config.temperature, None)
+    liquid = ParticleSystem(positions, config.temperature)
 
     energy.init(liquid.n_particles)
 
